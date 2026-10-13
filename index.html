@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e141b" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Swing Signal">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+body { margin: 0; -webkit-text-size-adjust: 100%; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<title>Swing Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: trading-desk console — verdict panel first, chart beneath, backtest + rules last. One column on phones. */
+:root {
+  --bg: #f3f5f7;
+  --panel: #ffffff;
+  --fg: #16202b;
+  --muted: #5d6b7a;
+  --line: #dce2e8;
+  --accent: #2b5fd9;
+  --buy: #0f8a5f;
+  --sell: #c8393b;
+  --hold: #a0710c;
+  --buy-bg: #e3f4ec;
+  --sell-bg: #fbe7e7;
+  --hold-bg: #f8efd9;
+  --ema20: #d97a1e;
+  --ema50: #6a4fc9;
+  --font-body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141b; --panel: #151d27; --fg: #e4e9ef; --muted: #8b98a7; --line: #263241;
+    --accent: #6f9bff; --buy: #3ccf91; --sell: #ff6b6d; --hold: #e6b44a;
+    --buy-bg: #12332a; --sell-bg: #3a1c1e; --hold-bg: #352a12;
+    --ema20: #f0a050; --ema50: #a58cff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141b; --panel: #151d27; --fg: #e4e9ef; --muted: #8b98a7; --line: #263241;
+  --accent: #6f9bff; --buy: #3ccf91; --sell: #ff6b6d; --hold: #e6b44a;
+  --buy-bg: #12332a; --sell-bg: #3a1c1e; --hold-bg: #352a12;
+  --ema20: #f0a050; --ema50: #a58cff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h1 small { font-weight: 400; color: var(--muted); font-size: .8rem; margin-left: 8px; }
+h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+select, button { font: inherit; font-size: .9rem; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.banner { font-size: .85rem; padding: 8px 12px; border-radius: 8px; background: var(--hold-bg); color: var(--fg); border: 1px solid var(--line); }
+.banner.live { background: var(--buy-bg); }
+.top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 760px) { .top { grid-template-columns: 1fr; } }
+.verdict { display: grid; gap: 14px; }
+.verdict-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; }
+.pill { display: inline-block; font-weight: 700; font-size: 1.9rem; padding: 4px 18px; border-radius: 8px; letter-spacing: .04em; }
+.pill.buy { background: var(--buy-bg); color: var(--buy); }
+.pill.sell { background: var(--sell-bg); color: var(--sell); }
+.pill.hold { background: var(--hold-bg); color: var(--hold); }
+.price { font-family: var(--font-num); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chg { font-family: var(--font-num); font-size: .9rem; }
+.up { color: var(--buy); } .down { color: var(--sell); }
+.meter { position: relative; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--sell), var(--hold) 50%, var(--buy)); opacity: .85; }
+.meter i { position: absolute; top: -5px; width: 4px; height: 20px; background: var(--fg); border-radius: 2px; transform: translateX(-2px); transition: left .4s; }
+.meter-scale { display: flex; justify-content: space-between; font-size: .72rem; color: var(--muted); font-family: var(--font-num); }
+.kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kv div { border-top: 1px solid var(--line); padding-top: 6px; }
+.kv span { display: block; font-size: .72rem; color: var(--muted); letter-spacing: .04em; }
+.kv b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; font-size: .95rem; }
+.reasons { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.reasons li { display: grid; grid-template-columns: 3.2em 1fr; gap: 10px; align-items: baseline; font-size: .9rem; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.reasons li:last-child { border-bottom: 0; }
+.pts { font-family: var(--font-num); font-weight: 600; text-align: right; }
+.pts.pos { color: var(--buy); } .pts.neg { color: var(--sell); } .pts.zero { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .78rem; color: var(--muted); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+#chart { height: 380px; }
+#rsiChart { height: 120px; margin-top: 6px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat span { display: block; font-size: .72rem; color: var(--muted); }
+.stat b { font-family: var(--font-num); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.tbl-wrap { overflow-x: auto; margin-top: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: .75rem; }
+td:first-child, th:first-child, td:nth-child(2), th:nth-child(2) { text-align: left; }
+td { font-family: var(--font-num); }
+.rules { font-size: .88rem; color: var(--fg); }
+.rules table td { font-family: var(--font-body); white-space: normal; text-align: left; }
+.rules table td.pts { font-family: var(--font-num); text-align: right; white-space: nowrap; }
+.note { font-size: .8rem; color: var(--muted); max-width: 70ch; }
+.advice { margin: 0; font-size: 1rem; font-weight: 500; }
+.act.buy { border-color: var(--buy); color: var(--buy); }
+.act.sell { border-color: var(--sell); color: var(--sell); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.paper-controls { margin-block: 12px; }
+.updated { font-size: .75rem; color: var(--muted); font-family: var(--font-num); }
+@media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+</style>
+
+<div class="wrap" lang="ja">
+  <header>
+    <h1>Swing Signal <small>仮想通貨スイングトレード判定(現物のみ)</small></h1>
+    <div class="controls">
+      <label for="coin" class="note">銘柄</label>
+      <select id="coin">
+        <option value="BTC">BTC ビットコイン</option>
+        <option value="ETH">ETH イーサリアム</option>
+        <option value="SOL">SOL ソラナ</option>
+        <option value="XRP">XRP リップル</option>
+        <option value="SUI">SUI スイ</option>
+      </select>
+      <label for="tf" class="note">足</label>
+      <select id="tf">
+        <option value="4h">4時間足</option>
+        <option value="1d" selected>日足</option>
+      </select>
+      <label for="holding" class="note">保有</label>
+      <select id="holding">
+        <option value="no">持っていない</option>
+        <option value="yes">持っている</option>
+      </select>
+      <button id="refresh" type="button">更新</button>
+      <button id="notify" type="button" hidden>シグナル変化を通知</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner">データを読み込み中…</div>
+
+  <section class="top">
+    <div class="panel verdict">
+      <h2>現在の判定</h2>
+      <div class="verdict-row">
+        <span id="pill" class="pill hold">—</span>
+        <span>
+          <span id="price" class="price">—</span>
+          <span id="chg" class="chg"></span>
+        </span>
+      </div>
+      <p id="advice" class="advice"></p>
+      <div>
+        <div class="meter"><i id="needle" style="left:50%"></i></div>
+        <div class="meter-scale"><span>-7 売却</span><span id="scoreText">スコア 0</span><span>+7 買い</span></div>
+      </div>
+      <div class="kv">
+        <div><span>損切り目安 (−2×ATR)</span><b id="stop">—</b></div>
+        <div><span>利確目安 (+3×ATR)</span><b id="target">—</b></div>
+        <div><span>RSI(14)</span><b id="rsiVal">—</b></div>
+      </div>
+      <div class="updated" id="updated"></div>
+    </div>
+    <div class="panel">
+      <h2>判定の内訳</h2>
+      <ul class="reasons" id="reasons"></ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>チャートと過去の売買サイン</h2>
+    <div class="legend">
+      <span><i style="background:var(--ema20)"></i>EMA20</span>
+      <span><i style="background:var(--ema50)"></i>EMA50</span>
+      <span><i style="background:var(--buy)"></i>▲ 買いサイン</span>
+      <span><i style="background:var(--sell)"></i>▼ 売却サイン</span>
+    </div>
+    <div id="chart"></div>
+    <div id="rsiChart"></div>
+  </section>
+
+  <section class="panel">
+    <h2>このルールで過去に売買していたら(バックテスト)</h2>
+    <div class="stats" id="stats"></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>買った日</th><th>売った日</th><th>買値</th><th>売値</th><th>損益(手数料込み)</th></tr></thead>
+        <tbody id="trades"></tbody>
+      </table>
+    </div>
+    <p class="note">現物のみの計算です。買いサインで手元資金の全額を買い、売却サインか損切りラインで保有分を全部売ります。空売り・先物・レバレッジは使いません。手数料は売買ごとに0.1%を差し引いています。</p>
+  </section>
+
+  <section class="panel">
+    <h2>デモトレード(仮想資金)</h2>
+    <div class="stats" id="paperStats"></div>
+    <div class="controls paper-controls">
+      <button id="pBuyAll" type="button" class="act buy">全額で買う</button>
+      <button id="pBuyHalf" type="button" class="act buy">半分で買う</button>
+      <button id="pSell" type="button" class="act sell">保有分を全部売る</button>
+      <button id="pReset" type="button">リセット</button>
+      <span id="pMsg" class="note" role="status"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>日時</th><th>内容</th><th>価格</th><th>数量</th><th>金額</th></tr></thead>
+        <tbody id="paperLog"></tbody>
+      </table>
+    </div>
+    <p class="note">仮想資金 10,000 USDT から始めて、表示中の価格で現物を売買できます(手数料0.1%)。持っている数量より多くは売れず、資金より多くは買えません。記録はこのブラウザの中だけに保存されます。デモデータ表示中は売買できません。</p>
+  </section>
+
+  <section class="panel">
+    <h2>全銘柄でルールを検証</h2>
+    <div class="controls"><button id="evalBtn" type="button">全銘柄 × 日足・4時間足で検証する</button><span id="evalMsg" class="note" role="status"></span></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>銘柄</th><th>足</th><th>期間</th><th>取引</th><th>勝率</th><th>戦略</th><th>買って放置</th><th>最大DD</th></tr></thead>
+        <tbody id="evalBody"><tr><td colspan="8">ボタンを押すと、Binanceの実データで過去約500本分のバックテストをまとめて実行します。</td></tr></tbody>
+      </table>
+    </div>
+    <p id="evalSummary" class="note"></p>
+  </section>
+
+  <section class="panel rules">
+    <h2>判定ルール</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tbody>
+          <tr><td>終値がEMA50より上 / 下</td><td class="pts">+1 / −1</td><td>中期トレンドの向き</td></tr>
+          <tr><td>EMA20がEMA50より上 / 下</td><td class="pts">+1 / −1</td><td>短期と中期の並び(ゴールデン/デッドクロス)</td></tr>
+          <tr><td>MACDヒストグラムが正 / 負</td><td class="pts">+1 / −1</td><td>勢いの向き</td></tr>
+          <tr><td>MACDがシグナル線を上抜け / 下抜け(直近3本)</td><td class="pts">+1 / −1</td><td>勢いの転換</td></tr>
+          <tr><td>RSI 30未満 / 70超</td><td class="pts">+2 / −2</td><td>売られすぎ / 買われすぎ</td></tr>
+          <tr><td>終値がボリンジャーバンド(20, 2σ)下限より下 / 上限より上</td><td class="pts">+1 / −1</td><td>行き過ぎ</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">現物のみで使う前提です。合計 +3 以上で「買い」、+5 以上で「強い買い」、−3 以下で「売却」、その間は「様子見」。「売却」は持っているコインを手放す合図で、持っていないときは「買わずに待つ」という意味です(空売りはしません)。バックテストの買いサインは様子見から買いに変わった足、売却サインは保有中にスコアが −2 以下になった足か、損切りライン(買値 −2×ATR)を割った足です。</p>
+    <p class="note">これはテクニカル指標を機械的に組み合わせた参考情報で、投資助言ではありません。ニュースや急変動には反応できません。最終判断と資金管理はご自身で行ってください。</p>
+  </section>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(() => {
+  document.documentElement.lang = "ja";
+  const $ = (id) => document.getElementById(id);
+  const DEMO_BASE = { BTC: 62000, ETH: 3100, SOL: 150, XRP: 0.55, SUI: 3.2 };
+  const REFRESH_MS = 5 * 60 * 1000;
+  let state = { candles: [], live: false, lastSignal: null };
+  let charts = null, timer = null;
+
+  try {
+    const saved = JSON.parse(localStorage.getItem("swing-signal") || "{}");
+    if (saved.coin && [...$("coin").options].some((o) => o.value === saved.coin)) $("coin").value = saved.coin;
+    if (saved.tf) $("tf").value = saved.tf;
+    if (saved.holding) $("holding").value = saved.holding;
+  } catch (e) {}
+
+  // ---------- data ----------
+  async function fetchKlines(coin, tf) {
+    const sym = coin + "USDT";
+    const hosts = ["https://data-api.binance.vision", "https://api.binance.com"];
+    for (const h of hosts) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=500`, { signal: ctrl.signal });
+        clearTimeout(t);
+        if (!r.ok) continue;
+        const rows = await r.json();
+        // drop the still-forming candle so signals don't flicker
+        return rows.slice(0, -1).map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+      } catch (e) { clearTimeout(t); }
+    }
+    return null;
+  }
+
+  function demoKlines(coin, tf) {
+    let seed = [...(coin + tf)].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
+    const rnd = () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+    const step = tf === "1d" ? 86400 : 14400;
+    const vol = tf === "1d" ? 0.032 : 0.013;
+    const n = 499;
+    const end = Math.floor(Date.now() / 1000 / step) * step - step;
+    let p = DEMO_BASE[coin], drift = 0, out = [];
+    for (let i = 0; i < n; i++) {
+      if (i % 60 === 0) drift = (rnd() - 0.5) * vol * 0.3;
+      const o = p;
+      const c = o * Math.exp(drift + vol * gauss());
+      const h = Math.max(o, c) * (1 + Math.abs(gauss()) * vol * 0.4);
+      const l = Math.min(o, c) * (1 - Math.abs(gauss()) * vol * 0.4);
+      out.push({ time: end - (n - 1 - i) * step, open: o, high: h, low: l, close: c });
+      p = c;
+    }
+    return out;
+  }
+
+  // ---------- indicators ----------
+  function ema(v, n) {
+    const out = Array(v.length).fill(null), k = 2 / (n + 1);
+    let start = v.findIndex((x) => x != null);
+    if (start < 0 || v.length - start < n) return out;
+    let s = 0; for (let i = start; i < start + n; i++) s += v[i];
+    out[start + n - 1] = s / n;
+    for (let i = start + n; i < v.length; i++) out[i] = v[i] * k + out[i - 1] * (1 - k);
+    return out;
+  }
+  function rsi(c, n = 14) {
+    const out = Array(c.length).fill(null);
+    let g = 0, l = 0;
+    for (let i = 1; i <= n && i < c.length; i++) { const d = c[i] - c[i - 1]; d > 0 ? (g += d) : (l -= d); }
+    g /= n; l /= n;
+    if (c.length > n) out[n] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+    for (let i = n + 1; i < c.length; i++) {
+      const d = c[i] - c[i - 1];
+      g = (g * (n - 1) + Math.max(d, 0)) / n;
+      l = (l * (n - 1) + Math.max(-d, 0)) / n;
+      out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+    }
+    return out;
+  }
+  function bollinger(c, n = 20, m = 2) {
+    const up = Array(c.length).fill(null), lo = Array(c.length).fill(null);
+    for (let i = n - 1; i < c.length; i++) {
+      const w = c.slice(i - n + 1, i + 1), mean = w.reduce((a, b) => a + b, 0) / n;
+      const sd = Math.sqrt(w.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+      up[i] = mean + m * sd; lo[i] = mean - m * sd;
+    }
+    return { up, lo };
+  }
+  function atr(cs, n = 14) {
+    const tr = cs.map((k, i) => i === 0 ? k.high - k.low : Math.max(k.high - k.low, Math.abs(k.high - cs[i - 1].close), Math.abs(k.low - cs[i - 1].close)));
+    const out = Array(cs.length).fill(null);
+    if (cs.length < n) return out;
+    let a = tr.slice(0, n).reduce((x, y) => x + y, 0) / n; out[n - 1] = a;
+    for (let i = n; i < cs.length; i++) { a = (a * (n - 1) + tr[i]) / n; out[i] = a; }
+    return out;
+  }
+
+  function computeAll(cs) {
+    const c = cs.map((k) => k.close);
+    const e20 = ema(c, 20), e50 = ema(c, 50);
+    const e12 = ema(c, 12), e26 = ema(c, 26);
+    const macd = c.map((_, i) => e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null);
+    const sig = ema(macd, 9);
+    const hist = macd.map((m, i) => m != null && sig[i] != null ? m - sig[i] : null);
+    return { c, e20, e50, hist, rsi: rsi(c), bb: bollinger(c), atr: atr(cs) };
+  }
+
+  function scoreAt(ind, i) {
+    const { c, e20, e50, hist, rsi: r, bb } = ind;
+    if ([e50[i], hist[i], r[i], bb.up[i], hist[i - 3]].some((x) => x == null)) return null;
+    const items = [];
+    items.push(c[i] > e50[i] ? [1, "終値がEMA50より上(上昇トレンド)"] : [-1, "終値がEMA50より下(下降トレンド)"]);
+    items.push(e20[i] > e50[i] ? [1, "EMA20がEMA50より上"] : [-1, "EMA20がEMA50より下"]);
+    items.push(hist[i] > 0 ? [1, "MACDがシグナル線より上(勢いは上向き)"] : [-1, "MACDがシグナル線より下(勢いは下向き)"]);
+    let cross = 0;
+    for (let j = i - 2; j <= i; j++) {
+      if (hist[j - 1] <= 0 && hist[j] > 0) cross = 1;
+      if (hist[j - 1] >= 0 && hist[j] < 0) cross = -1;
+    }
+    items.push(cross === 1 ? [1, "MACDが直近でシグナル線を上抜け"] : cross === -1 ? [-1, "MACDが直近でシグナル線を下抜け"] : [0, "MACDの直近クロスなし"]);
+    items.push(r[i] < 30 ? [2, `RSI ${r[i].toFixed(1)}:売られすぎ`] : r[i] > 70 ? [-2, `RSI ${r[i].toFixed(1)}:買われすぎ`] : [0, `RSI ${r[i].toFixed(1)}:中立圏`]);
+    items.push(c[i] < bb.lo[i] ? [1, "ボリンジャー下限を割り込み(下げすぎ)"] : c[i] > bb.up[i] ? [-1, "ボリンジャー上限を突破(上げすぎ)"] : [0, "ボリンジャーバンドの内側"]);
+    return { total: items.reduce((a, b) => a + b[0], 0), items };
+  }
+
+  const label = (s) => s >= 5 ? ["強い買い", "buy"] : s >= 3 ? ["買い", "buy"] : s <= -3 ? ["売却", "sell"] : ["様子見", "hold"];
+  const FEE = 0.001;
+  function advice(cls, holding) {
+    if (holding) return cls === "sell" ? "保有分の売却(利確・撤退)を検討するタイミングです。" : cls === "buy" ? "上昇の勢いが続いています。保有継続。損切りラインだけは守りましょう。" : "保有継続。損切りラインを割ったら売却を検討。";
+    return cls === "buy" ? "買い場の候補です。買うなら損切りラインも同時に決めておきましょう。" : cls === "sell" ? "下落傾向です。今は買わずに待ちましょう。" : "はっきりしたサインはありません。買わずに待ちましょう。";
+  }
+
+  function backtest(cs, ind, scores) {
+    const trades = []; let pos = null, eq = 1, peak = 1, mdd = 0;
+    for (let i = 1; i < cs.length; i++) {
+      const s = scores[i], p = scores[i - 1];
+      if (s == null || p == null) continue;
+      if (!pos && s.total >= 3 && p.total < 3) {
+        pos = { i, price: cs[i].close, stop: cs[i].close - 2 * ind.atr[i] };
+      } else if (pos) {
+        const hitStop = cs[i].low <= pos.stop;
+        if (hitStop || s.total <= -2) {
+          const exit = hitStop ? Math.min(pos.stop, cs[i].open) : cs[i].close;
+          const ret = exit * (1 - FEE) / (pos.price * (1 + FEE)) - 1;
+          eq *= 1 + ret; peak = Math.max(peak, eq); mdd = Math.min(mdd, eq / peak - 1);
+          trades.push({ inT: cs[pos.i].time, outT: cs[i].time, inP: pos.price, outP: exit, ret, stop: hitStop });
+          pos = null;
+        }
+      }
+    }
+    const first = scores.findIndex((s) => s != null);
+    const bh = cs[cs.length - 1].close / cs[first].close - 1;
+    let open = null;
+    if (pos) open = { inT: cs[pos.i].time, inP: pos.price, ret: cs[cs.length - 1].close * (1 - FEE) / (pos.price * (1 + FEE)) - 1 };
+    if (open) eq *= 1 + open.ret;
+    return { trades, eq: eq - 1, mdd, bh, open, from: cs[first].time };
+  }
+
+  // ---------- formatting ----------
+  const fmtP = (v) => v == null ? "—" : "$" + v.toLocaleString("en-US", { maximumFractionDigits: v < 1 ? 4 : v < 100 ? 2 : 0, minimumFractionDigits: v < 1 ? 4 : v < 100 ? 2 : 0 });
+  const fmtPct = (v) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+  const fmtD = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` + ($("tf").value === "4h" ? ` ${String(d.getHours()).padStart(2, "0")}時` : ""); };
+
+  // ---------- charts ----------
+  function tok(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function buildCharts() {
+    if (!window.LightweightCharts) return null;
+    if (charts) { charts.main.remove(); charts.sub.remove(); }
+    const base = {
+      layout: { background: { type: "solid", color: tok("--panel") }, textColor: tok("--muted"), fontFamily: "JetBrains Mono, monospace" },
+      grid: { vertLines: { color: tok("--line") }, horzLines: { color: tok("--line") } },
+      rightPriceScale: { borderColor: tok("--line") },
+      timeScale: { borderColor: tok("--line"), timeVisible: true },
+      autoSize: true,
+    };
+    const main = LightweightCharts.createChart($("chart"), base);
+    const sub = LightweightCharts.createChart($("rsiChart"), { ...base, timeScale: { ...base.timeScale, visible: false } });
+    const candle = main.addCandlestickSeries({ upColor: tok("--buy"), downColor: tok("--sell"), borderVisible: false, wickUpColor: tok("--buy"), wickDownColor: tok("--sell") });
+    const l20 = main.addLineSeries({ color: tok("--ema20"), lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    const l50 = main.addLineSeries({ color: tok("--ema50"), lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    const rs = sub.addLineSeries({ color: tok("--accent"), lineWidth: 2, priceLineVisible: false });
+    rs.createPriceLine({ price: 70, color: tok("--sell"), lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: "" });
+    rs.createPriceLine({ price: 30, color: tok("--buy"), lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: "" });
+    main.timeScale().subscribeVisibleLogicalRangeChange((r) => r && sub.timeScale().setVisibleLogicalRange(r));
+    charts = { main, sub, candle, l20, l50, rs };
+    return charts;
+  }
+
+  function drawCharts(cs, ind, bt) {
+    const ch = buildCharts();
+    if (!ch) { $("chart").textContent = "チャートライブラリを読み込めませんでした。ネット接続を確認してください。"; return; }
+    const line = (arr) => cs.map((k, i) => arr[i] == null ? null : { time: k.time, value: arr[i] }).filter(Boolean);
+    ch.candle.setData(cs);
+    ch.l20.setData(line(ind.e20));
+    ch.l50.setData(line(ind.e50));
+    ch.rs.setData(line(ind.rsi));
+    const marks = [];
+    bt.trades.forEach((t) => {
+      marks.push({ time: t.inT, position: "belowBar", color: tok("--buy"), shape: "arrowUp", text: "買" });
+      marks.push({ time: t.outT, position: "aboveBar", color: tok("--sell"), shape: "arrowDown", text: t.stop ? "損切" : "売" });
+    });
+    if (bt.open) marks.push({ time: bt.open.inT, position: "belowBar", color: tok("--buy"), shape: "arrowUp", text: "買(保有中)" });
+    marks.sort((a, b) => a.time - b.time);
+    ch.candle.setMarkers(marks);
+    ch.main.timeScale().setVisibleLogicalRange({ from: cs.length - 160, to: cs.length + 3 });
+  }
+
+  // ---------- render ----------
+  function render() {
+    const cs = state.candles;
+    if (cs.length < 60) return;
+    const ind = computeAll(cs);
+    const scores = cs.map((_, i) => scoreAt(ind, i));
+    const i = cs.length - 1, s = scores[i];
+    const [txt, cls] = label(s.total);
+
+    $("pill").textContent = txt; $("pill").className = "pill " + cls;
+    $("advice").textContent = advice(cls, $("holding").value === "yes");
+    $("price").textContent = fmtP(cs[i].close);
+    const ch = cs[i].close / cs[i - 1].close - 1;
+    $("chg").textContent = fmtPct(ch) + "(前の足比)"; $("chg").className = "chg " + (ch >= 0 ? "up" : "down");
+    $("needle").style.left = ((s.total + 7) / 14 * 100) + "%";
+    $("scoreText").textContent = "スコア " + (s.total > 0 ? "+" : "") + s.total;
+    $("stop").textContent = fmtP(cs[i].close - 2 * ind.atr[i]);
+    $("target").textContent = fmtP(cs[i].close + 3 * ind.atr[i]);
+    $("rsiVal").textContent = ind.rsi[i].toFixed(1);
+    $("updated").textContent = "最後に確定した足: " + fmtD(cs[i].time) + "  /  取得: " + new Date().toLocaleTimeString("ja-JP");
+
+    $("reasons").innerHTML = "";
+    s.items.forEach(([p, t]) => {
+      const li = document.createElement("li");
+      const b = document.createElement("span"); b.className = "pts " + (p > 0 ? "pos" : p < 0 ? "neg" : "zero"); b.textContent = (p > 0 ? "+" : "") + p;
+      const span = document.createElement("span"); span.textContent = t;
+      li.append(b, span); $("reasons").append(li);
+    });
+
+    const bt = backtest(cs, ind, scores);
+    const wins = bt.trades.filter((t) => t.ret > 0).length;
+    const stats = [
+      ["検証期間", fmtD(bt.from) + "〜"],
+      ["取引回数", bt.trades.length + " 回"],
+      ["勝率", bt.trades.length ? Math.round(wins / bt.trades.length * 100) + "%" : "—"],
+      ["戦略の累積リターン", fmtPct(bt.eq) + (bt.open ? "(保有中含む)" : "")],
+      ["ガチホ(買って放置)", fmtPct(bt.bh)],
+      ["最大ドローダウン", fmtPct(bt.mdd)],
+    ];
+    $("stats").innerHTML = "";
+    stats.forEach(([k, v]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = `<span></span><b></b>`; d.children[0].textContent = k; d.children[1].textContent = v; $("stats").append(d); });
+
+    const rows = bt.trades.slice(-8).reverse().map((t) => `<tr><td>${fmtD(t.inT)}</td><td>${fmtD(t.outT)}${t.stop ? "(損切)" : ""}</td><td>${fmtP(t.inP)}</td><td>${fmtP(t.outP)}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtPct(t.ret)}</td></tr>`);
+    if (bt.open) rows.unshift(`<tr><td>${fmtD(bt.open.inT)}</td><td>保有中</td><td>${fmtP(bt.open.inP)}</td><td>—</td><td class="${bt.open.ret >= 0 ? "up" : "down"}">${fmtPct(bt.open.ret)}</td></tr>`);
+    $("trades").innerHTML = rows.join("") || `<tr><td colspan="5">この期間に売買サインは出ていません</td></tr>`;
+
+    drawCharts(cs, ind, bt);
+    renderPaper();
+
+    if (state.live && state.lastSignal && state.lastSignal !== txt) notify(`${$("coin").value}: ${state.lastSignal} → ${txt}`, `価格 ${fmtP(cs[i].close)} / スコア ${s.total}`);
+    state.lastSignal = txt;
+  }
+
+  // ---------- notifications (work when opened directly in a browser) ----------
+  function notify(title, body) {
+    try {
+      if (!window.Notification || Notification.permission !== "granted") return;
+      // iPhone's home-screen app only shows notifications through the service worker
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((r) => r.showNotification(title, { body, icon: "icons/icon-192.png" })).catch(() => {});
+      else new Notification(title, { body });
+    } catch (e) {}
+  }
+  try {
+    if (window.Notification && Notification.permission !== "denied") {
+      $("notify").hidden = false;
+      $("notify").addEventListener("click", async () => {
+        try { const p = await Notification.requestPermission(); $("notify").textContent = p === "granted" ? "通知オン" : "通知は許可されませんでした"; } catch (e) { $("notify").hidden = true; }
+      });
+    }
+  } catch (e) {}
+
+  // ---------- demo trade (spot only, virtual money) ----------
+  const START_CASH = 10000;
+  let paper = { cash: START_CASH, pos: {}, log: [] };
+  try { const sp = JSON.parse(localStorage.getItem("swing-paper") || "null"); if (sp && typeof sp.cash === "number") paper = sp; } catch (e) {}
+  const savePaper = () => { try { localStorage.setItem("swing-paper", JSON.stringify(paper)); } catch (e) {} };
+  const lastPrice = () => state.candles.length ? state.candles[state.candles.length - 1].close : null;
+  const fmtQ = (q) => q.toLocaleString("en-US", { maximumFractionDigits: 6 });
+  function paperTrade(kind, frac) {
+    const coin = $("coin").value, px = lastPrice();
+    if (!state.live || !px) { $("pMsg").textContent = "実データを読み込んでから売買できます。"; return; }
+    if (kind === "buy") {
+      const spend = paper.cash * frac;
+      if (spend < 1) { $("pMsg").textContent = "資金が足りません。"; return; }
+      const qty = spend * (1 - FEE) / px;
+      const cur = paper.pos[coin] || { qty: 0, cost: 0 };
+      paper.pos[coin] = { qty: cur.qty + qty, cost: cur.cost + spend };
+      paper.cash -= spend;
+      paper.log.unshift({ t: Date.now(), coin, side: "買い", px, qty, amt: spend });
+      $("pMsg").textContent = `${coin} を ${fmtQ(qty)} 買いました。`;
+    } else {
+      const cur = paper.pos[coin];
+      if (!cur || cur.qty <= 0) { $("pMsg").textContent = `${coin} を持っていないので売れません(現物のみ)。`; return; }
+      const got = cur.qty * px * (1 - FEE);
+      paper.cash += got;
+      paper.log.unshift({ t: Date.now(), coin, side: "売り", px, qty: cur.qty, amt: got, pl: got - cur.cost });
+      delete paper.pos[coin];
+      $("pMsg").textContent = `${coin} を全部売りました。損益 ${got - cur.cost >= 0 ? "+" : ""}${(got - cur.cost).toFixed(2)} USDT`;
+    }
+    paper.log = paper.log.slice(0, 50);
+    savePaper(); renderPaper();
+  }
+  function renderPaper() {
+    const coin = $("coin").value, px = lastPrice(), cur = paper.pos[coin];
+    let held = 0;
+    Object.entries(paper.pos).forEach(([c, p]) => { held += c === coin && px ? p.qty * px : p.cost; });
+    const total = paper.cash + held;
+    const closed = paper.log.filter((l) => l.pl != null), wins = closed.filter((l) => l.pl > 0).length;
+    const items = [
+      ["現金", paper.cash.toFixed(2) + " USDT"],
+      [`${coin} 保有`, cur ? fmtQ(cur.qty) : "なし"],
+      [`${coin} 含み損益`, cur && px ? fmtPct(cur.qty * px * (1 - FEE) / cur.cost - 1) : "—"],
+      ["評価額(合計)", total.toFixed(2) + " USDT"],
+      ["通算損益", fmtPct(total / START_CASH - 1)],
+      ["決済済み", closed.length ? `${closed.length} 回 / 勝率 ${Math.round(wins / closed.length * 100)}%` : "まだなし"],
+    ];
+    $("paperStats").innerHTML = "";
+    items.forEach(([k, v]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = "<span></span><b></b>"; d.children[0].textContent = k; d.children[1].textContent = v; $("paperStats").append(d); });
+    $("paperLog").innerHTML = paper.log.map((l) => `<tr><td>${new Date(l.t).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td><td>${l.coin} ${l.side}</td><td>${fmtP(l.px)}</td><td>${fmtQ(l.qty)}</td><td>${l.amt.toFixed(2)}${l.pl != null ? ` <span class="${l.pl >= 0 ? "up" : "down"}">(${l.pl >= 0 ? "+" : ""}${l.pl.toFixed(2)})</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="5">まだ取引はありません</td></tr>`;
+    ["pBuyAll", "pBuyHalf", "pSell"].forEach((id) => $(id).disabled = !state.live);
+  }
+  $("pBuyAll").addEventListener("click", () => paperTrade("buy", 1));
+  $("pBuyHalf").addEventListener("click", () => paperTrade("buy", 0.5));
+  $("pSell").addEventListener("click", () => paperTrade("sell"));
+  $("pReset").addEventListener("click", () => {
+    if ($("pReset").dataset.armed) { paper = { cash: START_CASH, pos: {}, log: [] }; savePaper(); renderPaper(); $("pReset").textContent = "リセット"; delete $("pReset").dataset.armed; $("pMsg").textContent = "リセットしました。"; }
+    else { $("pReset").dataset.armed = "1"; $("pReset").textContent = "もう一度押すとリセット"; setTimeout(() => { $("pReset").textContent = "リセット"; delete $("pReset").dataset.armed; }, 4000); }
+  });
+
+  // ---------- evaluate all coins ----------
+  $("evalBtn").addEventListener("click", async () => {
+    const coins = [...$("coin").options].map((o) => o.value), tfs = ["1d", "4h"];
+    $("evalBtn").disabled = true; $("evalBody").innerHTML = ""; $("evalSummary").textContent = "";
+    const res = [];
+    for (const tf of tfs) for (const coin of coins) {
+      $("evalMsg").textContent = `${coin} ${tf} を取得中…`;
+      const cs = await fetchKlines(coin, tf);
+      if (!cs || cs.length < 120) { $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf}</td><td colspan="6">取得できませんでした</td></tr>`); continue; }
+      const ind = computeAll(cs), sc = cs.map((_, i) => scoreAt(ind, i)), bt = backtest(cs, ind, sc);
+      const w = bt.trades.filter((t) => t.ret > 0).length;
+      res.push({ coin, tf, bt, w });
+      const d = (t) => { const x = new Date(t * 1000); return `${x.getFullYear()}/${x.getMonth() + 1}`; };
+      $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf === "1d" ? "日足" : "4時間"}</td><td>${d(bt.from)}〜</td><td>${bt.trades.length}</td><td>${bt.trades.length ? Math.round(w / bt.trades.length * 100) + "%" : "—"}</td><td class="${bt.eq >= 0 ? "up" : "down"}">${fmtPct(bt.eq)}</td><td class="${bt.bh >= 0 ? "up" : "down"}">${fmtPct(bt.bh)}</td><td>${fmtPct(bt.mdd)}</td></tr>`);
+    }
+    $("evalBtn").disabled = false;
+    if (!res.length) { $("evalMsg").textContent = "データを取得できませんでした。このファイルをブラウザで直接開いて試してください。"; return; }
+    $("evalMsg").textContent = "完了";
+    const beat = res.filter((r) => r.bt.eq > r.bt.bh).length, pos = res.filter((r) => r.bt.eq > 0).length;
+    const avg = res.reduce((a, r) => a + r.bt.eq, 0) / res.length, avgBh = res.reduce((a, r) => a + r.bt.bh, 0) / res.length;
+    const nT = res.reduce((a, r) => a + r.bt.trades.length, 0), nW = res.reduce((a, r) => a + r.w, 0);
+    $("evalSummary").textContent = `${res.length} 通り中、プラスで終わったのは ${pos} 通り、買って放置より良かったのは ${beat} 通り。平均リターンは戦略 ${fmtPct(avg)}、買って放置 ${fmtPct(avgBh)}。全体の勝率は ${nT ? Math.round(nW / nT * 100) : 0}%(${nT} 回)。`;
+  });
+
+  async function load() {
+    const coin = $("coin").value, tf = $("tf").value;
+    try { localStorage.setItem("swing-signal", JSON.stringify({ coin, tf, holding: $("holding").value })); } catch (e) {}
+    $("banner").className = "banner"; $("banner").textContent = "データを読み込み中…";
+    const live = await fetchKlines(coin, tf);
+    if (live && live.length > 60) {
+      state = { ...state, candles: live, live: true };
+      $("banner").className = "banner live";
+      $("banner").textContent = `ライブデータ:Binance ${coin}/USDT ${tf === "1d" ? "日足" : "4時間足"}。5分ごとに自動更新します。`;
+    } else {
+      state = { ...state, candles: demoKlines(coin, tf), live: false, lastSignal: null };
+      $("banner").textContent = "価格データを取得できなかったため、デモ用の架空データで表示しています。数値は実際の相場ではありません。このファイルをパソコンやスマホのブラウザで直接開くと、Binanceの実データで動きます。";
+    }
+    render();
+    clearInterval(timer);
+    if (state.live) timer = setInterval(load, REFRESH_MS);
+  }
+
+  $("coin").addEventListener("change", () => { state.lastSignal = null; load(); });
+  $("tf").addEventListener("change", () => { state.lastSignal = null; load(); });
+  $("refresh").addEventListener("click", load);
+  $("holding").addEventListener("change", () => { try { localStorage.setItem("swing-signal", JSON.stringify({ coin: $("coin").value, tf: $("tf").value, holding: $("holding").value })); } catch (e) {} render(); });
+
+  const rerender = () => state.candles.length && render();
+  try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender); } catch (e) {}
+  new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  load();
+})();
+</script>
+
+<script>
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
