@@ -197,7 +197,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     <div class="stats" id="stats"></div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>買った日</th><th>売った日</th><th>買値</th><th>売値</th><th>損益(手数料込み)</th></tr></thead>
+        <thead><tr><th>買った日</th><th>買い時スコア</th><th>売った日</th><th>売り時スコア</th><th>買値</th><th>売値</th><th>損益(手数料込み)</th></tr></thead>
         <tbody id="trades"></tbody>
       </table>
     </div>
@@ -394,14 +394,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       const s = scores[i], p = scores[i - 1];
       if (s == null || p == null) continue;
       if (!pos && s.total >= 3 && p.total < 3) {
-        pos = { i, price: cs[i].close, stop: cs[i].close - 2 * ind.atr[i] };
+        pos = { i, price: cs[i].close, stop: cs[i].close - 2 * ind.atr[i], score: s.total };
       } else if (pos) {
         const hitStop = cs[i].low <= pos.stop;
         if (hitStop || s.total <= -2) {
           const exit = hitStop ? Math.min(pos.stop, cs[i].open) : cs[i].close;
           const ret = exit * (1 - FEE) / (pos.price * (1 + FEE)) - 1;
           eq *= 1 + ret; peak = Math.max(peak, eq); mdd = Math.min(mdd, eq / peak - 1);
-          trades.push({ inT: cs[pos.i].time, outT: cs[i].time, inP: pos.price, outP: exit, ret, stop: hitStop });
+          trades.push({ inT: cs[pos.i].time, outT: cs[i].time, inP: pos.price, outP: exit, ret, stop: hitStop, inS: pos.score, outS: s.total });
           pos = null;
         }
       }
@@ -409,7 +409,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const first = scores.findIndex((s) => s != null);
     const bh = cs[cs.length - 1].close / cs[first].close - 1;
     let open = null;
-    if (pos) open = { inT: cs[pos.i].time, inP: pos.price, ret: cs[cs.length - 1].close * (1 - FEE) / (pos.price * (1 + FEE)) - 1 };
+    if (pos) open = { inT: cs[pos.i].time, inP: pos.price, inS: pos.score, nowS: scores[cs.length - 1].total, ret: cs[cs.length - 1].close * (1 - FEE) / (pos.price * (1 + FEE)) - 1 };
     if (open) eq *= 1 + open.ret;
     return { trades, eq: eq - 1, mdd, bh, open, from: cs[first].time };
   }
@@ -506,9 +506,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     $("stats").innerHTML = "";
     stats.forEach(([k, v]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = `<span></span><b></b>`; d.children[0].textContent = k; d.children[1].textContent = v; $("stats").append(d); });
 
-    const rows = bt.trades.slice(-8).reverse().map((t) => `<tr><td>${fmtD(t.inT)}</td><td>${fmtD(t.outT)}${t.stop ? "(損切)" : ""}</td><td>${fmtP(t.inP)}</td><td>${fmtP(t.outP)}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtPct(t.ret)}</td></tr>`);
-    if (bt.open) rows.unshift(`<tr><td>${fmtD(bt.open.inT)}</td><td>保有中</td><td>${fmtP(bt.open.inP)}</td><td>—</td><td class="${bt.open.ret >= 0 ? "up" : "down"}">${fmtPct(bt.open.ret)}</td></tr>`);
-    $("trades").innerHTML = rows.join("") || `<tr><td colspan="5">この期間に売買サインは出ていません</td></tr>`;
+    const sc = (v) => `<span class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${v}</span>`;
+    const rows = bt.trades.slice(-8).reverse().map((t) => `<tr><td>${fmtD(t.inT)}</td><td>${sc(t.inS)}</td><td>${fmtD(t.outT)}${t.stop ? "(損切)" : ""}</td><td>${sc(t.outS)}</td><td>${fmtP(t.inP)}</td><td>${fmtP(t.outP)}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtPct(t.ret)}</td></tr>`);
+    if (bt.open) rows.unshift(`<tr><td>${fmtD(bt.open.inT)}</td><td>${sc(bt.open.inS)}</td><td>保有中</td><td>${sc(bt.open.nowS)}(現在)</td><td>${fmtP(bt.open.inP)}</td><td>—</td><td class="${bt.open.ret >= 0 ? "up" : "down"}">${fmtPct(bt.open.ret)}</td></tr>`);
+    $("trades").innerHTML = rows.join("") || `<tr><td colspan="7">この期間に売買サインは出ていません</td></tr>`;
 
     drawCharts(cs, ind, bt);
     renderPaper();
