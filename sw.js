@@ -1,4 +1,4 @@
-const CACHE = "swing-signal-e84c4c99";
+const CACHE = "swing-signal-5e5dbd50";
 const SHELL = [
   "./",
   "./index.html",

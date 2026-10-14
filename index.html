@@ -185,9 +185,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       <span><i style="background:var(--ema50)"></i>EMA50</span>
       <span><i style="background:var(--buy)"></i>▲ 買いサイン</span>
       <span><i style="background:var(--sell)"></i>▼ 売却サイン</span>
+      <span>右端の足は形成中(判定には未使用)</span>
     </div>
     <div id="chart"></div>
     <div id="rsiChart"></div>
+    <p class="note">日足は毎朝9時(日本時間)に1本確定します。判定はブレを防ぐため確定した足だけで行い、形成中の足はチャートと現在値にだけ反映します。</p>
   </section>
 
   <section class="panel">
@@ -259,7 +261,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   const $ = (id) => document.getElementById(id);
   const DEMO_BASE = { BTC: 62000, ETH: 3100, SOL: 150, XRP: 0.55, SUI: 3.2 };
   const REFRESH_MS = 5 * 60 * 1000;
-  let state = { candles: [], live: false, lastSignal: null };
+  let state = { candles: [], forming: null, live: false, lastSignal: null, fetchedAt: 0 };
   let charts = null, timer = null;
 
   try {
@@ -281,8 +283,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         clearTimeout(t);
         if (!r.ok) continue;
         const rows = await r.json();
-        // drop the still-forming candle so signals don't flicker
-        return rows.slice(0, -1).map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+        // includes the still-forming candle as the last row; callers keep it out of signals
+        return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
       } catch (e) { clearTimeout(t); }
     }
     return null;
@@ -446,7 +448,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const ch = buildCharts();
     if (!ch) { $("chart").textContent = "チャートライブラリを読み込めませんでした。ネット接続を確認してください。"; return; }
     const line = (arr) => cs.map((k, i) => arr[i] == null ? null : { time: k.time, value: arr[i] }).filter(Boolean);
-    ch.candle.setData(cs);
+    ch.candle.setData(state.forming ? cs.concat(state.forming) : cs);
     ch.l20.setData(line(ind.e20));
     ch.l50.setData(line(ind.e50));
     ch.rs.setData(line(ind.rsi));
@@ -472,15 +474,16 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
     $("pill").textContent = txt; $("pill").className = "pill " + cls;
     $("advice").textContent = advice(cls, $("holding").value === "yes");
-    $("price").textContent = fmtP(cs[i].close);
-    const ch = cs[i].close / cs[i - 1].close - 1;
-    $("chg").textContent = fmtPct(ch) + "(前の足比)"; $("chg").className = "chg " + (ch >= 0 ? "up" : "down");
+    const now = state.forming ? state.forming.close : cs[i].close;
+    $("price").textContent = fmtP(now);
+    const ch = now / cs[i].close - 1;
+    $("chg").textContent = fmtPct(ch) + (state.forming ? "(確定足の終値比)" : "(前の足比)"); $("chg").className = "chg " + (ch >= 0 ? "up" : "down");
     $("needle").style.left = ((s.total + 7) / 14 * 100) + "%";
     $("scoreText").textContent = "スコア " + (s.total > 0 ? "+" : "") + s.total;
-    $("stop").textContent = fmtP(cs[i].close - 2 * ind.atr[i]);
-    $("target").textContent = fmtP(cs[i].close + 3 * ind.atr[i]);
+    $("stop").textContent = fmtP(now - 2 * ind.atr[i]);
+    $("target").textContent = fmtP(now + 3 * ind.atr[i]);
     $("rsiVal").textContent = ind.rsi[i].toFixed(1);
-    $("updated").textContent = "最後に確定した足: " + fmtD(cs[i].time) + "  /  取得: " + new Date().toLocaleTimeString("ja-JP");
+    $("updated").textContent = "判定に使った足: " + fmtD(cs[i].time) + "(確定済み)  /  現在値の取得: " + new Date(state.fetchedAt || Date.now()).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 
     $("reasons").innerHTML = "";
     s.items.forEach(([p, t]) => {
@@ -510,7 +513,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     drawCharts(cs, ind, bt);
     renderPaper();
 
-    if (state.live && state.lastSignal && state.lastSignal !== txt) notify(`${$("coin").value}: ${state.lastSignal} → ${txt}`, `価格 ${fmtP(cs[i].close)} / スコア ${s.total}`);
+    if (state.live && state.lastSignal && state.lastSignal !== txt) notify(`${$("coin").value}: ${state.lastSignal} → ${txt}`, `価格 ${fmtP(now)} / スコア ${s.total}`);
     state.lastSignal = txt;
   }
 
@@ -537,7 +540,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   let paper = { cash: START_CASH, pos: {}, log: [] };
   try { const sp = JSON.parse(localStorage.getItem("swing-paper") || "null"); if (sp && typeof sp.cash === "number") paper = sp; } catch (e) {}
   const savePaper = () => { try { localStorage.setItem("swing-paper", JSON.stringify(paper)); } catch (e) {} };
-  const lastPrice = () => state.candles.length ? state.candles[state.candles.length - 1].close : null;
+  const lastPrice = () => state.forming ? state.forming.close : state.candles.length ? state.candles[state.candles.length - 1].close : null;
   const fmtQ = (q) => q.toLocaleString("en-US", { maximumFractionDigits: 6 });
   function paperTrade(kind, frac) {
     const coin = $("coin").value, px = lastPrice();
@@ -597,7 +600,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const res = [];
     for (const tf of tfs) for (const coin of coins) {
       $("evalMsg").textContent = `${coin} ${tf} を取得中…`;
-      const cs = await fetchKlines(coin, tf);
+      const all = await fetchKlines(coin, tf), cs = all && all.slice(0, -1);
       if (!cs || cs.length < 120) { $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf}</td><td colspan="6">取得できませんでした</td></tr>`); continue; }
       const ind = computeAll(cs), sc = cs.map((_, i) => scoreAt(ind, i)), bt = backtest(cs, ind, sc);
       const w = bt.trades.filter((t) => t.ret > 0).length;
@@ -620,11 +623,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     $("banner").className = "banner"; $("banner").textContent = "データを読み込み中…";
     const live = await fetchKlines(coin, tf);
     if (live && live.length > 60) {
-      state = { ...state, candles: live, live: true };
+      state = { ...state, candles: live.slice(0, -1), forming: live[live.length - 1], live: true, fetchedAt: Date.now() };
       $("banner").className = "banner live";
       $("banner").textContent = `ライブデータ:Binance ${coin}/USDT ${tf === "1d" ? "日足" : "4時間足"}。5分ごとに自動更新します。`;
     } else {
-      state = { ...state, candles: demoKlines(coin, tf), live: false, lastSignal: null };
+      state = { ...state, candles: demoKlines(coin, tf), forming: null, live: false, lastSignal: null, fetchedAt: Date.now() };
       $("banner").textContent = "価格データを取得できなかったため、デモ用の架空データで表示しています。数値は実際の相場ではありません。このファイルをパソコンやスマホのブラウザで直接開くと、Binanceの実データで動きます。";
     }
     render();
@@ -635,6 +638,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   $("coin").addEventListener("change", () => { state.lastSignal = null; load(); });
   $("tf").addEventListener("change", () => { state.lastSignal = null; load(); });
   $("refresh").addEventListener("click", load);
+  // phones pause timers in the background, so fetch again when the app comes back to the front
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - state.fetchedAt > 60 * 1000) load();
+  });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) load(); });
   $("holding").addEventListener("change", () => { try { localStorage.setItem("swing-signal", JSON.stringify({ coin: $("coin").value, tf: $("tf").value, holding: $("holding").value })); } catch (e) {} render(); });
 
   const rerender = () => state.candles.length && render();
