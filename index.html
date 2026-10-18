@@ -141,7 +141,6 @@ td small { color: var(--muted); font-size: .75em; }
       </select>
       <label for="strat" class="note">ルール</label>
       <select id="strat">
-        <option value="pullback">押し目買い</option>
         <option value="breakout">高値ブレイク</option>
         <option value="score">スコア(旧ルール)</option>
       </select>
@@ -218,18 +217,18 @@ td small { color: var(--muted); font-size: .75em; }
 
   <section class="panel">
     <h2>全銘柄でルールを比較</h2>
-    <div class="controls"><button id="evalBtn" type="button">3つのルールを全銘柄の日足で比較する</button><span id="evalMsg" class="note" role="status"></span></div>
+    <div class="controls"><button id="evalBtn" type="button">2つのルールを全銘柄の日足で比較する</button><span id="evalMsg" class="note" role="status"></span></div>
     <div class="tbl-wrap">
       <table>
         <thead><tr><th>ルール</th><th>BTCフィルター</th><th>平均リターン</th><th>中央値</th><th>放置に勝った</th><th>プラス</th><th>勝率</th><th>取引</th><th>平均最大DD</th></tr></thead>
-        <tbody id="evalSum"><tr><td colspan="9">ボタンを押すと、Binanceの実データ(日足・最大約5年)で、3つのルールをBTCフィルターあり・なしの両方で比べます。</td></tr></tbody>
+        <tbody id="evalSum"><tr><td colspan="9">ボタンを押すと、Binanceの実データ(日足・最大約5年)で、2つのルールをBTCフィルターあり・なしの両方で比べます。</td></tr></tbody>
       </table>
     </div>
     <div class="controls eval-detail"><label for="evalGate" class="note">銘柄別の表示</label>
       <select id="evalGate"><option value="on">BTCフィルターあり</option><option value="off">BTCフィルターなし</option></select></div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>銘柄</th><th>期間</th><th>買って放置</th><th>押し目買い</th><th>高値ブレイク</th><th>スコア(旧)</th></tr></thead>
+        <thead><tr><th>銘柄</th><th>期間</th><th>買って放置</th><th>高値ブレイク</th><th>スコア(旧)</th></tr></thead>
         <tbody id="evalBody"></tbody>
       </table>
     </div>
@@ -240,10 +239,6 @@ td small { color: var(--muted); font-size: .75em; }
     <h2>判定ルール</h2>
     <h3 class="rule-h">BTCフィルター(全ルール共通)</h3>
     <p class="note">「あり」にすると、BTCの日足終値が200日移動平均より下のあいだは、どのルールでも新しく買いません。仮想通貨はBTCにつられて動くことが多いため、市場全体の弱気相場を避ける目的の定番の方法です。売りの条件は変わりません。</p>
-    <h3 class="rule-h">押し目買い</h3>
-    <p class="note">上昇トレンド中の一時的な下げを拾うルールです。<br>
-    <b>買い</b>:終値がEMA50より上、EMA20がEMA50より上、EMA50が5本前より上向き(=上昇トレンド)で、前の足の終値がEMA20以下まで下げ、今の足でEMA20を上抜けたとき。<br>
-    <b>売却</b>:終値がEMA50を割ったとき(トレンド終了)。または買値−2.5×ATRの損切りライン、保有中の最高値−3×ATRで切り上がっていくトレールラインを割ったとき。</p>
     <h3 class="rule-h">高値ブレイク</h3>
     <p class="note">強い上昇の始まりに乗るルールです。<br>
     <b>買い</b>:終値が直前20本の最高値を上抜け、かつEMA50より上のとき。<br>
@@ -440,31 +435,10 @@ td small { color: var(--muted); font-size: .75em; }
   }
 
   const scoreLabel = (s) => s >= 5 ? ["強い買い", "buy"] : s >= 3 ? ["買い", "buy"] : s <= -3 ? ["売却", "sell"] : ["様子見", "hold"];
-  const uptrend = (ind, i) => ind.e50[i - 5] != null && ind.c[i] > ind.e50[i] && ind.e20[i] > ind.e50[i] && ind.e50[i] > ind.e50[i - 5];
 
   // ---------- rules ----------
   // entry/exit are judged on a closed candle; stop = initial stop in ATRs, trail = trailing stop in ATRs below the highest close
   const STRATS = {
-    pullback: {
-      name: "押し目買い", stop: 2.5, trail: 3,
-      entry: (ind, i) => uptrend(ind, i) && ind.c[i - 1] <= ind.e20[i - 1] && ind.c[i] > ind.e20[i],
-      exit: (ind, i) => ind.c[i] < ind.e50[i],
-      view(ind, i) {
-        const up = uptrend(ind, i), dipped = ind.c[i - 1] <= ind.e20[i - 1], reclaimed = ind.c[i] > ind.e20[i];
-        const items = [
-          [ind.c[i] > ind.e50[i], "終値がEMA50より上"],
-          [ind.e20[i] > ind.e50[i], "EMA20がEMA50より上"],
-          [ind.e50[i] > ind.e50[i - 5], "EMA50が上向き"],
-          [dipped, "前の足でEMA20まで押した"],
-          [reclaimed, "今の足でEMA20を上抜けた"],
-        ];
-        if (this.entry(ind, i)) return { label: "買い", cls: "buy", items, note: "上昇トレンド中の押し目からの反発です。" };
-        if (this.exit(ind, i)) return { label: "売却", cls: "sell", items, note: "EMA50を割り、上昇トレンドが崩れています。" };
-        if (up && reclaimed) return { label: "様子見", cls: "hold", items, note: "上昇トレンド中。EMA20まで下げてから反発したら買い場です。" };
-        if (up) return { label: "様子見", cls: "hold", items, note: "押し目を形成中。EMA20を上抜けたら買い場です。" };
-        return { label: "様子見", cls: "hold", items, note: "上昇トレンドの条件がそろっていません。" };
-      },
-    },
     breakout: {
       name: "高値ブレイク", stop: 2.5, trail: 3,
       entry: (ind, i) => ind.hh20[i] != null && ind.c[i] > ind.hh20[i] && ind.c[i] > ind.e50[i],
@@ -682,7 +656,7 @@ td small { color: var(--muted); font-size: .75em; }
 
   // ---------- compare rules on all coins ----------
   $("evalBtn").addEventListener("click", async () => {
-    const coins = [...$("coin").options].map((o) => o.value), keys = ["pullback", "breakout", "score"];
+    const coins = [...$("coin").options].map((o) => o.value), keys = ["breakout", "score"];
     $("evalBtn").disabled = true; $("evalBody").innerHTML = "";
     $("evalMsg").textContent = "BTCの200日線を計算中…";
     const btc = await loadBtc();
