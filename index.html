@@ -114,6 +114,9 @@ td { font-family: var(--font-num); }
 .note { font-size: .8rem; color: var(--muted); max-width: 70ch; }
 .advice { margin: 0; font-size: 1rem; font-weight: 500; }
 button:disabled { opacity: .45; cursor: not-allowed; }
+.rule-h { font-size: .95rem; margin: 16px 0 4px; }
+.rule-h:first-of-type { margin-top: 0; }
+td small { color: var(--muted); font-size: .75em; }
 .updated { font-size: .75rem; color: var(--muted); font-family: var(--font-num); }
 @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
 </style>
@@ -135,6 +138,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         <option value="4h">4時間足</option>
         <option value="1d" selected>日足</option>
       </select>
+      <label for="strat" class="note">ルール</label>
+      <select id="strat">
+        <option value="pullback">押し目買い</option>
+        <option value="breakout">高値ブレイク</option>
+        <option value="score">スコア(旧ルール)</option>
+      </select>
       <label for="holding" class="note">保有</label>
       <select id="holding">
         <option value="no">持っていない</option>
@@ -149,7 +158,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
   <section class="top">
     <div class="panel verdict">
-      <h2>現在の判定</h2>
+      <h2 id="verdictTitle">現在の判定</h2>
       <div class="verdict-row">
         <span id="pill" class="pill hold">—</span>
         <span>
@@ -158,13 +167,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         </span>
       </div>
       <p id="advice" class="advice"></p>
-      <div>
+      <div id="meterBox">
         <div class="meter"><i id="needle" style="left:50%"></i></div>
         <div class="meter-scale"><span>-7 売却</span><span id="scoreText">スコア 0</span><span>+7 買い</span></div>
       </div>
       <div class="kv">
-        <div><span>損切り目安 (−2×ATR)</span><b id="stop">—</b></div>
-        <div><span>利確目安 (+3×ATR)</span><b id="target">—</b></div>
+        <div><span id="stopLabel">損切り目安</span><b id="stop">—</b></div>
+        <div><span id="targetLabel">利確目安</span><b id="target">—</b></div>
         <div><span>RSI(14)</span><b id="rsiVal">—</b></div>
       </div>
       <div class="updated" id="updated"></div>
@@ -198,28 +207,43 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         <tbody id="trades"></tbody>
       </table>
     </div>
-    <p class="note">現物のみの計算です。買いサインで手元資金の全額を買い、売却サインか損切りラインで保有分を全部売ります。空売り・先物・レバレッジは使いません。手数料は売買ごとに0.1%を差し引いています。</p>
+    <p class="note">現物のみの計算です。買いサインで手元資金の全額を買い、売却サインか損切り・トレールラインで保有分を全部売ります。空売り・先物・レバレッジは使いません。手数料は売買ごとに0.1%を差し引いています。最大ドローダウンは保有中の含み損も含めて計算しています。スコアはどのルールでも参考として表示しています。</p>
   </section>
 
   <section class="panel">
-    <h2>全銘柄でルールを検証</h2>
-    <div class="controls"><button id="evalBtn" type="button">全銘柄 × 日足・4時間足で検証する</button><span id="evalMsg" class="note" role="status"></span></div>
+    <h2>全銘柄でルールを比較</h2>
+    <div class="controls"><button id="evalBtn" type="button">3つのルールを全銘柄 × 日足・4時間足で比較する</button><span id="evalMsg" class="note" role="status"></span></div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>銘柄</th><th>足</th><th>期間</th><th>取引</th><th>勝率</th><th>戦略</th><th>買って放置</th><th>最大DD</th></tr></thead>
-        <tbody id="evalBody"><tr><td colspan="8">ボタンを押すと、Binanceの実データで過去約500本分のバックテストをまとめて実行します。</td></tr></tbody>
+        <thead><tr><th>ルール</th><th>平均リターン</th><th>放置に勝った</th><th>プラス</th><th>勝率</th><th>取引</th><th>平均最大DD</th></tr></thead>
+        <tbody id="evalSum"><tr><td colspan="7">ボタンを押すと、Binanceの実データ(日足は最大約5年、4時間足は約11か月)で3つのルールを同じ条件で比べます。</td></tr></tbody>
       </table>
     </div>
-    <p id="evalSummary" class="note"></p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>銘柄</th><th>足</th><th>期間</th><th>買って放置</th><th>押し目買い</th><th>高値ブレイク</th><th>スコア(旧)</th></tr></thead>
+        <tbody id="evalBody"></tbody>
+      </table>
+    </div>
+    <p class="note">各ルールの数字は累積リターン(カッコ内は取引回数)。ルールのパラメータは一般的な定番値のままで、この期間の結果に合わせた調整はしていません。</p>
   </section>
 
   <section class="panel rules">
     <h2>判定ルール</h2>
+    <h3 class="rule-h">押し目買い</h3>
+    <p class="note">上昇トレンド中の一時的な下げを拾うルールです。<br>
+    <b>買い</b>:終値がEMA50より上、EMA20がEMA50より上、EMA50が5本前より上向き(=上昇トレンド)で、前の足の終値がEMA20以下まで下げ、今の足でEMA20を上抜けたとき。<br>
+    <b>売却</b>:終値がEMA50を割ったとき(トレンド終了)。または買値−2.5×ATRの損切りライン、保有中の最高値−3×ATRで切り上がっていくトレールラインを割ったとき。</p>
+    <h3 class="rule-h">高値ブレイク</h3>
+    <p class="note">強い上昇の始まりに乗るルールです。<br>
+    <b>買い</b>:終値が直前20本の最高値を上抜け、かつEMA50より上のとき。<br>
+    <b>売却</b>:終値が直前10本の最安値を割ったとき。または損切りライン(買値−2.5×ATR)かトレールライン(最高値−3×ATR)を割ったとき。</p>
+    <h3 class="rule-h">スコア(旧ルール)</h3>
     <div class="tbl-wrap">
       <table>
         <tbody>
           <tr><td>終値がEMA50より上 / 下</td><td class="pts">+1 / −1</td><td>中期トレンドの向き</td></tr>
-          <tr><td>EMA20がEMA50より上 / 下</td><td class="pts">+1 / −1</td><td>短期と中期の並び(ゴールデン/デッドクロス)</td></tr>
+          <tr><td>EMA20がEMA50より上 / 下</td><td class="pts">+1 / −1</td><td>短期と中期の並び</td></tr>
           <tr><td>MACDヒストグラムが正 / 負</td><td class="pts">+1 / −1</td><td>勢いの向き</td></tr>
           <tr><td>MACDがシグナル線を上抜け / 下抜け(直近3本)</td><td class="pts">+1 / −1</td><td>勢いの転換</td></tr>
           <tr><td>RSI 30未満 / 70超</td><td class="pts">+2 / −2</td><td>売られすぎ / 買われすぎ</td></tr>
@@ -227,8 +251,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         </tbody>
       </table>
     </div>
-    <p class="note">現物のみで使う前提です。合計 +3 以上で「買い」、+5 以上で「強い買い」、−3 以下で「売却」、その間は「様子見」。「売却」は持っているコインを手放す合図で、持っていないときは「買わずに待つ」という意味です(空売りはしません)。バックテストの買いサインは様子見から買いに変わった足、売却サインは保有中にスコアが −2 以下になった足か、損切りライン(買値 −2×ATR)を割った足です。</p>
-    <p class="note">これはテクニカル指標を機械的に組み合わせた参考情報で、投資助言ではありません。ニュースや急変動には反応できません。最終判断と資金管理はご自身で行ってください。</p>
+    <p class="note">合計 +3 以上で「買い」、+5 以上で「強い買い」、−3 以下で「売却」、その間は「様子見」。バックテストでは様子見から買いに変わった足で買い、スコア −2 以下か損切りライン(買値 −2×ATR)で売ります。</p>
+    <p class="note">「売却」は持っているコインを手放す合図で、持っていないときは「買わずに待つ」という意味です(空売りはしません)。これはテクニカル指標を機械的に組み合わせた参考情報で、投資助言ではありません。ニュースや急変動には反応できません。最終判断と資金管理はご自身で行ってください。</p>
   </section>
 </div>
 
@@ -239,33 +263,46 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   const $ = (id) => document.getElementById(id);
   const DEMO_BASE = { BTC: 62000, ETH: 3100, SOL: 150, XRP: 0.55, SUI: 3.2 };
   const REFRESH_MS = 5 * 60 * 1000;
+  const FEE = 0.001;
   let state = { candles: [], forming: null, live: false, lastSignal: null, fetchedAt: 0 };
   let charts = null, timer = null;
 
   try {
     const saved = JSON.parse(localStorage.getItem("swing-signal") || "{}");
-    if (saved.coin && [...$("coin").options].some((o) => o.value === saved.coin)) $("coin").value = saved.coin;
-    if (saved.tf) $("tf").value = saved.tf;
+    const has = (id, v) => [...$(id).options].some((o) => o.value === v);
+    if (saved.coin && has("coin", saved.coin)) $("coin").value = saved.coin;
+    if (saved.tf && has("tf", saved.tf)) $("tf").value = saved.tf;
+    if (saved.strat && has("strat", saved.strat)) $("strat").value = saved.strat;
     if (saved.holding) $("holding").value = saved.holding;
   } catch (e) {}
+  const savePrefs = () => { try { localStorage.setItem("swing-signal", JSON.stringify({ coin: $("coin").value, tf: $("tf").value, strat: $("strat").value, holding: $("holding").value })); } catch (e) {} };
 
   // ---------- data ----------
-  async function fetchKlines(coin, tf) {
+  // Binance returns at most 1000 candles per request, so page backwards for a longer history.
+  async function fetchKlines(coin, tf, pages = 2) {
     const sym = coin + "USDT";
     const hosts = ["https://data-api.binance.vision", "https://api.binance.com"];
-    for (const h of hosts) {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 8000);
-      try {
-        const r = await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=500`, { signal: ctrl.signal });
-        clearTimeout(t);
-        if (!r.ok) continue;
-        const rows = await r.json();
-        // includes the still-forming candle as the last row; callers keep it out of signals
-        return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
-      } catch (e) { clearTimeout(t); }
+    const get = async (extra) => {
+      for (const h of hosts) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const r = await fetch(`${h}/api/v3/klines?symbol=${sym}&interval=${tf}&limit=1000${extra}`, { signal: ctrl.signal });
+          clearTimeout(t);
+          if (r.ok) return await r.json();
+        } catch (e) { clearTimeout(t); }
+      }
+      return null;
+    };
+    let rows = await get("");
+    if (!rows) return null;
+    for (let p = 1; p < pages && rows.length >= 1000 * p; p++) {
+      const older = (await get(`&endTime=${rows[0][0] - 1}`) || []).filter((k) => k[0] < rows[0][0]);
+      if (!older.length) break;
+      rows = older.concat(rows);
     }
-    return null;
+    // includes the still-forming candle as the last row; callers keep it out of signals
+    return rows.map((k) => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
   }
 
   function demoKlines(coin, tf) {
@@ -274,7 +311,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
     const step = tf === "1d" ? 86400 : 14400;
     const vol = tf === "1d" ? 0.032 : 0.013;
-    const n = 499;
+    const n = 999;
     const end = Math.floor(Date.now() / 1000 / step) * step - step;
     let p = DEMO_BASE[coin], drift = 0, out = [];
     for (let i = 0; i < n; i++) {
@@ -330,6 +367,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     for (let i = n; i < cs.length; i++) { a = (a * (n - 1) + tr[i]) / n; out[i] = a; }
     return out;
   }
+  // highest high / lowest low of the n candles BEFORE i (the current candle is excluded)
+  function priorExtreme(cs, n, key, pick) {
+    return cs.map((_, i) => i < n ? null : pick(...cs.slice(i - n, i).map((k) => k[key])));
+  }
 
   function computeAll(cs) {
     const c = cs.map((k) => k.close);
@@ -338,12 +379,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const macd = c.map((_, i) => e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null);
     const sig = ema(macd, 9);
     const hist = macd.map((m, i) => m != null && sig[i] != null ? m - sig[i] : null);
-    return { c, e20, e50, hist, rsi: rsi(c), bb: bollinger(c), atr: atr(cs) };
+    const ind = { c, e20, e50, hist, rsi: rsi(c), bb: bollinger(c), atr: atr(cs), hh20: priorExtreme(cs, 20, "high", Math.max), ll10: priorExtreme(cs, 10, "low", Math.min) };
+    ind.score = c.map((_, i) => scoreAt(ind, i));
+    return ind;
   }
 
   function scoreAt(ind, i) {
     const { c, e20, e50, hist, rsi: r, bb } = ind;
-    if ([e50[i], hist[i], r[i], bb.up[i], hist[i - 3]].some((x) => x == null)) return null;
+    if (i < 4 || [e50[i], hist[i], r[i], bb.up[i], hist[i - 3]].some((x) => x == null)) return null;
     const items = [];
     items.push(c[i] > e50[i] ? [1, "終値がEMA50より上(上昇トレンド)"] : [-1, "終値がEMA50より下(下降トレンド)"]);
     items.push(e20[i] > e50[i] ? [1, "EMA20がEMA50より上"] : [-1, "EMA20がEMA50より下"]);
@@ -359,43 +402,97 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     return { total: items.reduce((a, b) => a + b[0], 0), items };
   }
 
-  const label = (s) => s >= 5 ? ["強い買い", "buy"] : s >= 3 ? ["買い", "buy"] : s <= -3 ? ["売却", "sell"] : ["様子見", "hold"];
-  const FEE = 0.001;
-  function advice(cls, holding) {
-    if (holding) return cls === "sell" ? "保有分の売却(利確・撤退)を検討するタイミングです。" : cls === "buy" ? "上昇の勢いが続いています。保有継続。損切りラインだけは守りましょう。" : "保有継続。損切りラインを割ったら売却を検討。";
-    return cls === "buy" ? "買い場の候補です。買うなら損切りラインも同時に決めておきましょう。" : cls === "sell" ? "下落傾向です。今は買わずに待ちましょう。" : "はっきりしたサインはありません。買わずに待ちましょう。";
+  const scoreLabel = (s) => s >= 5 ? ["強い買い", "buy"] : s >= 3 ? ["買い", "buy"] : s <= -3 ? ["売却", "sell"] : ["様子見", "hold"];
+  const uptrend = (ind, i) => ind.e50[i - 5] != null && ind.c[i] > ind.e50[i] && ind.e20[i] > ind.e50[i] && ind.e50[i] > ind.e50[i - 5];
+
+  // ---------- rules ----------
+  // entry/exit are judged on a closed candle; stop = initial stop in ATRs, trail = trailing stop in ATRs below the highest close
+  const STRATS = {
+    pullback: {
+      name: "押し目買い", stop: 2.5, trail: 3,
+      entry: (ind, i) => uptrend(ind, i) && ind.c[i - 1] <= ind.e20[i - 1] && ind.c[i] > ind.e20[i],
+      exit: (ind, i) => ind.c[i] < ind.e50[i],
+      view(ind, i) {
+        const up = uptrend(ind, i), dipped = ind.c[i - 1] <= ind.e20[i - 1], reclaimed = ind.c[i] > ind.e20[i];
+        const items = [
+          [ind.c[i] > ind.e50[i], "終値がEMA50より上"],
+          [ind.e20[i] > ind.e50[i], "EMA20がEMA50より上"],
+          [ind.e50[i] > ind.e50[i - 5], "EMA50が上向き"],
+          [dipped, "前の足でEMA20まで押した"],
+          [reclaimed, "今の足でEMA20を上抜けた"],
+        ];
+        if (this.entry(ind, i)) return { label: "買い", cls: "buy", items, note: "上昇トレンド中の押し目からの反発です。" };
+        if (this.exit(ind, i)) return { label: "売却", cls: "sell", items, note: "EMA50を割り、上昇トレンドが崩れています。" };
+        if (up && reclaimed) return { label: "様子見", cls: "hold", items, note: "上昇トレンド中。EMA20まで下げてから反発したら買い場です。" };
+        if (up) return { label: "様子見", cls: "hold", items, note: "押し目を形成中。EMA20を上抜けたら買い場です。" };
+        return { label: "様子見", cls: "hold", items, note: "上昇トレンドの条件がそろっていません。" };
+      },
+    },
+    breakout: {
+      name: "高値ブレイク", stop: 2.5, trail: 3,
+      entry: (ind, i) => ind.hh20[i] != null && ind.c[i] > ind.hh20[i] && ind.c[i] > ind.e50[i],
+      exit: (ind, i) => ind.ll10[i] != null && ind.c[i] < ind.ll10[i],
+      view(ind, i) {
+        const gap = ind.hh20[i] / ind.c[i] - 1;
+        const items = [
+          [ind.c[i] > ind.hh20[i], ind.c[i] > ind.hh20[i] ? "終値が直前20本の最高値を上抜け" : `直前20本の最高値まであと ${(gap * 100).toFixed(1)}%`],
+          [ind.c[i] > ind.e50[i], "終値がEMA50より上"],
+          [ind.c[i] >= ind.ll10[i], "終値が直前10本の最安値より上"],
+        ];
+        if (this.entry(ind, i)) return { label: "買い", cls: "buy", items, note: "直近の高値を上抜けました。上昇の始まりの可能性があります。" };
+        if (this.exit(ind, i)) return { label: "売却", cls: "sell", items, note: "直近10本の安値を割りました。" };
+        return { label: "様子見", cls: "hold", items, note: "高値の上抜けを待っています。" };
+      },
+    },
+    score: {
+      name: "スコア(旧ルール)", stop: 2, trail: null,
+      entry: (ind, i) => ind.score[i] && ind.score[i - 1] && ind.score[i].total >= 3 && ind.score[i - 1].total < 3,
+      exit: (ind, i) => ind.score[i] && ind.score[i].total <= -2,
+      view(ind, i) {
+        const s = ind.score[i], [label, cls] = scoreLabel(s.total);
+        return { label, cls, items: s.items, scored: true };
+      },
+    },
+  };
+
+  function advice(cls, holding, note) {
+    const base = holding
+      ? (cls === "sell" ? "保有分の売却(利確・撤退)を検討するタイミングです。" : "保有継続。損切り・トレールラインを割ったら売却。")
+      : (cls === "buy" ? "買い場の候補です。買うなら損切りラインも同時に決めておきましょう。" : cls === "sell" ? "今は買わずに待ちましょう。" : "今は買わずに待ちましょう。");
+    return note ? `${note} ${base}` : base;
   }
 
-  function backtest(cs, ind, scores) {
+  function backtest(cs, ind, st) {
+    const start = 60, ret = (inP, outP) => outP * (1 - FEE) / (inP * (1 + FEE)) - 1;
     const trades = []; let pos = null, eq = 1, peak = 1, mdd = 0;
-    for (let i = 1; i < cs.length; i++) {
-      const s = scores[i], p = scores[i - 1];
-      if (s == null || p == null) continue;
-      if (!pos && s.total >= 3 && p.total < 3) {
-        pos = { i, price: cs[i].close, stop: cs[i].close - 2 * ind.atr[i], score: s.total };
-      } else if (pos) {
-        const hitStop = cs[i].low <= pos.stop;
-        if (hitStop || s.total <= -2) {
-          const exit = hitStop ? Math.min(pos.stop, cs[i].open) : cs[i].close;
-          const ret = exit * (1 - FEE) / (pos.price * (1 + FEE)) - 1;
-          eq *= 1 + ret; peak = Math.max(peak, eq); mdd = Math.min(mdd, eq / peak - 1);
-          trades.push({ inT: cs[pos.i].time, outT: cs[i].time, inP: pos.price, outP: exit, ret, stop: hitStop, inS: pos.score, outS: s.total });
-          pos = null;
-        }
+    const sc = (i) => ind.score[i] ? ind.score[i].total : null;
+    const close = (i, px, why) => {
+      const r = ret(pos.price, px); eq *= 1 + r;
+      trades.push({ inT: cs[pos.i].time, outT: cs[i].time, inP: pos.price, outP: px, ret: r, why, inS: pos.score, outS: sc(i) });
+      pos = null;
+    };
+    for (let i = start; i < cs.length; i++) {
+      if (pos) {
+        if (cs[i].low <= pos.stop) close(i, Math.min(pos.stop, cs[i].open), pos.stop > pos.price ? "trail" : "stop");
+        else if (st.exit(ind, i)) close(i, cs[i].close, "signal");
+        else if (st.trail) { pos.hi = Math.max(pos.hi, cs[i].close); pos.stop = Math.max(pos.stop, pos.hi - st.trail * ind.atr[i]); }
+      } else if (st.entry(ind, i)) {
+        pos = { i, price: cs[i].close, stop: cs[i].close - st.stop * ind.atr[i], hi: cs[i].close, score: sc(i) };
       }
+      const m = pos ? eq * (1 + ret(pos.price, cs[i].close)) : eq;
+      peak = Math.max(peak, m); mdd = Math.min(mdd, m / peak - 1);
     }
-    const first = scores.findIndex((s) => s != null);
-    const bh = cs[cs.length - 1].close / cs[first].close - 1;
+    const last = cs.length - 1;
     let open = null;
-    if (pos) open = { inT: cs[pos.i].time, inP: pos.price, inS: pos.score, nowS: scores[cs.length - 1].total, ret: cs[cs.length - 1].close * (1 - FEE) / (pos.price * (1 + FEE)) - 1 };
-    if (open) eq *= 1 + open.ret;
-    return { trades, eq: eq - 1, mdd, bh, open, from: cs[first].time };
+    if (pos) { open = { inT: cs[pos.i].time, inP: pos.price, inS: pos.score, nowS: sc(last), stop: pos.stop, ret: ret(pos.price, cs[last].close) }; eq *= 1 + open.ret; }
+    return { trades, eq: eq - 1, mdd, bh: cs[last].close / cs[start].close - 1, open, from: cs[start].time };
   }
 
   // ---------- formatting ----------
   const fmtP = (v) => v == null ? "—" : "$" + v.toLocaleString("en-US", { maximumFractionDigits: v < 1 ? 4 : v < 100 ? 2 : 0, minimumFractionDigits: v < 1 ? 4 : v < 100 ? 2 : 0 });
   const fmtPct = (v) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
   const fmtD = (t) => { const d = new Date(t * 1000); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` + ($("tf").value === "4h" ? ` ${String(d.getHours()).padStart(2, "0")}時` : ""); };
+  const WHY = { stop: "(損切)", trail: "(トレール)", signal: "" };
 
   // ---------- charts ----------
   function tok(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -433,7 +530,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const marks = [];
     bt.trades.forEach((t) => {
       marks.push({ time: t.inT, position: "belowBar", color: tok("--buy"), shape: "arrowUp", text: "買" });
-      marks.push({ time: t.outT, position: "aboveBar", color: tok("--sell"), shape: "arrowDown", text: t.stop ? "損切" : "売" });
+      marks.push({ time: t.outT, position: "aboveBar", color: tok("--sell"), shape: "arrowDown", text: t.why === "stop" ? "損切" : t.why === "trail" ? "利確" : "売" });
     });
     if (bt.open) marks.push({ time: bt.open.inT, position: "belowBar", color: tok("--buy"), shape: "arrowUp", text: "買(保有中)" });
     marks.sort((a, b) => a.time - b.time);
@@ -444,34 +541,51 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   // ---------- render ----------
   function render() {
     const cs = state.candles;
-    if (cs.length < 60) return;
+    if (cs.length < 80) return;
+    const st = STRATS[$("strat").value];
     const ind = computeAll(cs);
-    const scores = cs.map((_, i) => scoreAt(ind, i));
-    const i = cs.length - 1, s = scores[i];
-    const [txt, cls] = label(s.total);
+    const i = cs.length - 1, s = ind.score[i];
+    const v = st.view(ind, i);
+    const bt = backtest(cs, ind, st);
 
-    $("pill").textContent = txt; $("pill").className = "pill " + cls;
-    $("advice").textContent = advice(cls, $("holding").value === "yes");
+    $("verdictTitle").textContent = `現在の判定(${st.name})`;
+    $("pill").textContent = v.label; $("pill").className = "pill " + v.cls;
+    $("advice").textContent = advice(v.cls, $("holding").value === "yes", v.note);
     const now = state.forming ? state.forming.close : cs[i].close;
     $("price").textContent = fmtP(now);
     const ch = now / cs[i].close - 1;
     $("chg").textContent = fmtPct(ch) + (state.forming ? "(確定足の終値比)" : "(前の足比)"); $("chg").className = "chg " + (ch >= 0 ? "up" : "down");
     $("needle").style.left = ((s.total + 7) / 14 * 100) + "%";
     $("scoreText").textContent = "スコア " + (s.total > 0 ? "+" : "") + s.total;
-    $("stop").textContent = fmtP(now - 2 * ind.atr[i]);
-    $("target").textContent = fmtP(now + 3 * ind.atr[i]);
+    $("meterBox").hidden = !v.scored;
+    $("stopLabel").textContent = `損切り目安 (−${st.stop}×ATR)`;
+    $("stop").textContent = fmtP(now - st.stop * ind.atr[i]);
+    if (st.trail) {
+      $("targetLabel").textContent = bt.open ? "このルールのトレールライン" : `利確はトレール (最高値−${st.trail}×ATR)`;
+      $("target").textContent = bt.open ? fmtP(bt.open.stop) : "値幅 " + fmtP(st.trail * ind.atr[i]);
+    } else {
+      $("targetLabel").textContent = "利確目安 (+3×ATR)";
+      $("target").textContent = fmtP(now + 3 * ind.atr[i]);
+    }
     $("rsiVal").textContent = ind.rsi[i].toFixed(1);
     $("updated").textContent = "判定に使った足: " + fmtD(cs[i].time) + "(確定済み)  /  現在値の取得: " + new Date(state.fetchedAt || Date.now()).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 
     $("reasons").innerHTML = "";
-    s.items.forEach(([p, t]) => {
+    v.items.forEach(([p, t]) => {
       const li = document.createElement("li");
-      const b = document.createElement("span"); b.className = "pts " + (p > 0 ? "pos" : p < 0 ? "neg" : "zero"); b.textContent = (p > 0 ? "+" : "") + p;
+      const b = document.createElement("span");
+      if (typeof p === "number") { b.className = "pts " + (p > 0 ? "pos" : p < 0 ? "neg" : "zero"); b.textContent = (p > 0 ? "+" : "") + p; }
+      else { b.className = "pts " + (p ? "pos" : "zero"); b.textContent = p ? "✓" : "—"; }
       const span = document.createElement("span"); span.textContent = t;
       li.append(b, span); $("reasons").append(li);
     });
+    if (!v.scored) {
+      const li = document.createElement("li");
+      const b = document.createElement("span"); b.className = "pts zero"; b.textContent = (s.total > 0 ? "+" : "") + s.total;
+      const span = document.createElement("span"); span.textContent = "参考:旧ルールのスコア";
+      li.append(b, span); $("reasons").append(li);
+    }
 
-    const bt = backtest(cs, ind, scores);
     const wins = bt.trades.filter((t) => t.ret > 0).length;
     const stats = [
       ["検証期間", fmtD(bt.from) + "〜"],
@@ -482,20 +596,23 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       ["最大ドローダウン", fmtPct(bt.mdd)],
     ];
     $("stats").innerHTML = "";
-    stats.forEach(([k, v]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = `<span></span><b></b>`; d.children[0].textContent = k; d.children[1].textContent = v; $("stats").append(d); });
+    stats.forEach(([k, val]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = `<span></span><b></b>`; d.children[0].textContent = k; d.children[1].textContent = val; $("stats").append(d); });
 
-    const sc = (v) => `<span class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${v}</span>`;
-    const rows = bt.trades.slice(-8).reverse().map((t) => `<tr><td>${fmtD(t.inT)}</td><td>${sc(t.inS)}</td><td>${fmtD(t.outT)}${t.stop ? "(損切)" : ""}</td><td>${sc(t.outS)}</td><td>${fmtP(t.inP)}</td><td>${fmtP(t.outP)}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtPct(t.ret)}</td></tr>`);
+    const sc = (x) => x == null ? "—" : `<span class="${x > 0 ? "up" : x < 0 ? "down" : ""}">${x > 0 ? "+" : ""}${x}</span>`;
+    const rows = bt.trades.slice(-10).reverse().map((t) => `<tr><td>${fmtD(t.inT)}</td><td>${sc(t.inS)}</td><td>${fmtD(t.outT)}${WHY[t.why]}</td><td>${sc(t.outS)}</td><td>${fmtP(t.inP)}</td><td>${fmtP(t.outP)}</td><td class="${t.ret >= 0 ? "up" : "down"}">${fmtPct(t.ret)}</td></tr>`);
     if (bt.open) rows.unshift(`<tr><td>${fmtD(bt.open.inT)}</td><td>${sc(bt.open.inS)}</td><td>保有中</td><td>${sc(bt.open.nowS)}(現在)</td><td>${fmtP(bt.open.inP)}</td><td>—</td><td class="${bt.open.ret >= 0 ? "up" : "down"}">${fmtPct(bt.open.ret)}</td></tr>`);
     $("trades").innerHTML = rows.join("") || `<tr><td colspan="7">この期間に売買サインは出ていません</td></tr>`;
 
     drawCharts(cs, ind, bt);
 
-    if (state.live && state.lastSignal && state.lastSignal !== txt) notify(`${$("coin").value}: ${state.lastSignal} → ${txt}`, `価格 ${fmtP(now)} / スコア ${s.total}`);
-    state.lastSignal = txt;
+    const sigKey = `${$("strat").value}:${v.label}`;
+    if (state.live && state.lastSignal && state.lastSignal.split(":")[0] === $("strat").value && state.lastSignal !== sigKey) {
+      notify(`${$("coin").value}(${st.name}): ${state.lastSignal.split(":")[1]} → ${v.label}`, `価格 ${fmtP(now)}`);
+    }
+    state.lastSignal = sigKey;
   }
 
-  // ---------- notifications (work when opened directly in a browser) ----------
+  // ---------- notifications ----------
   function notify(title, body) {
     try {
       if (!window.Notification || Notification.permission !== "granted") return;
@@ -516,36 +633,44 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   // the demo-trade feature was removed; clear what it left in this browser
   try { localStorage.removeItem("swing-paper"); } catch (e) {}
 
-  // ---------- evaluate all coins ----------
+  // ---------- compare rules on all coins ----------
   $("evalBtn").addEventListener("click", async () => {
-    const coins = [...$("coin").options].map((o) => o.value), tfs = ["1d", "4h"];
-    $("evalBtn").disabled = true; $("evalBody").innerHTML = ""; $("evalSummary").textContent = "";
-    const res = [];
+    const coins = [...$("coin").options].map((o) => o.value), tfs = ["1d", "4h"], keys = ["pullback", "breakout", "score"];
+    $("evalBtn").disabled = true; $("evalBody").innerHTML = "";
+    const agg = Object.fromEntries(keys.map((k) => [k, { eq: [], mdd: [], beat: 0, pos: 0, n: 0, w: 0 }]));
+    let done = 0;
+    const cell = (x, n) => `<span class="${x >= 0 ? "up" : "down"}">${fmtPct(x)}</span>${n != null ? ` <small>(${n})</small>` : ""}`;
     for (const tf of tfs) for (const coin of coins) {
-      $("evalMsg").textContent = `${coin} ${tf} を取得中…`;
+      $("evalMsg").textContent = `${coin} ${tf === "1d" ? "日足" : "4時間足"} を取得中…`;
       const all = await fetchKlines(coin, tf), cs = all && all.slice(0, -1);
-      if (!cs || cs.length < 120) { $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf}</td><td colspan="6">取得できませんでした</td></tr>`); continue; }
-      const ind = computeAll(cs), sc = cs.map((_, i) => scoreAt(ind, i)), bt = backtest(cs, ind, sc);
-      const w = bt.trades.filter((t) => t.ret > 0).length;
-      res.push({ coin, tf, bt, w });
+      if (!cs || cs.length < 150) { $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf}</td><td colspan="5">取得できませんでした</td></tr>`); continue; }
+      const ind = computeAll(cs);
+      const r = keys.map((k) => backtest(cs, ind, STRATS[k]));
+      r.forEach((bt, j) => {
+        const a = agg[keys[j]];
+        a.eq.push(bt.eq); a.mdd.push(bt.mdd); a.n += bt.trades.length; a.w += bt.trades.filter((t) => t.ret > 0).length;
+        if (bt.eq > bt.bh) a.beat++; if (bt.eq > 0) a.pos++;
+      });
+      done++;
       const d = (t) => { const x = new Date(t * 1000); return `${x.getFullYear()}/${x.getMonth() + 1}`; };
-      $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf === "1d" ? "日足" : "4時間"}</td><td>${d(bt.from)}〜</td><td>${bt.trades.length}</td><td>${bt.trades.length ? Math.round(w / bt.trades.length * 100) + "%" : "—"}</td><td class="${bt.eq >= 0 ? "up" : "down"}">${fmtPct(bt.eq)}</td><td class="${bt.bh >= 0 ? "up" : "down"}">${fmtPct(bt.bh)}</td><td>${fmtPct(bt.mdd)}</td></tr>`);
+      $("evalBody").insertAdjacentHTML("beforeend", `<tr><td>${coin}</td><td>${tf === "1d" ? "日足" : "4時間"}</td><td>${d(r[0].from)}〜</td><td>${cell(r[0].bh)}</td>${r.map((bt) => `<td>${cell(bt.eq, bt.trades.length)}</td>`).join("")}</tr>`);
     }
     $("evalBtn").disabled = false;
-    if (!res.length) { $("evalMsg").textContent = "データを取得できませんでした。このファイルをブラウザで直接開いて試してください。"; return; }
+    if (!done) { $("evalMsg").textContent = "データを取得できませんでした。通信状況を確認してください。"; return; }
     $("evalMsg").textContent = "完了";
-    const beat = res.filter((r) => r.bt.eq > r.bt.bh).length, pos = res.filter((r) => r.bt.eq > 0).length;
-    const avg = res.reduce((a, r) => a + r.bt.eq, 0) / res.length, avgBh = res.reduce((a, r) => a + r.bt.bh, 0) / res.length;
-    const nT = res.reduce((a, r) => a + r.bt.trades.length, 0), nW = res.reduce((a, r) => a + r.w, 0);
-    $("evalSummary").textContent = `${res.length} 通り中、プラスで終わったのは ${pos} 通り、買って放置より良かったのは ${beat} 通り。平均リターンは戦略 ${fmtPct(avg)}、買って放置 ${fmtPct(avgBh)}。全体の勝率は ${nT ? Math.round(nW / nT * 100) : 0}%(${nT} 回)。`;
+    const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    $("evalSum").innerHTML = keys.map((k) => {
+      const a = agg[k];
+      return `<tr><td>${STRATS[k].name}</td><td>${cell(avg(a.eq))}</td><td>${a.beat} / ${done}</td><td>${a.pos} / ${done}</td><td>${a.n ? Math.round(a.w / a.n * 100) + "%" : "—"}</td><td>${a.n}</td><td>${fmtPct(avg(a.mdd))}</td></tr>`;
+    }).join("");
   });
 
   async function load() {
     const coin = $("coin").value, tf = $("tf").value;
-    try { localStorage.setItem("swing-signal", JSON.stringify({ coin, tf, holding: $("holding").value })); } catch (e) {}
+    savePrefs();
     $("banner").className = "banner"; $("banner").textContent = "データを読み込み中…";
     const live = await fetchKlines(coin, tf);
-    if (live && live.length > 60) {
+    if (live && live.length > 100) {
       state = { ...state, candles: live.slice(0, -1), forming: live[live.length - 1], live: true, fetchedAt: Date.now() };
       $("banner").className = "banner live";
       $("banner").textContent = `ライブデータ:Binance ${coin}/USDT ${tf === "1d" ? "日足" : "4時間足"}。5分ごとに自動更新します。`;
@@ -560,13 +685,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
   $("coin").addEventListener("change", () => { state.lastSignal = null; load(); });
   $("tf").addEventListener("change", () => { state.lastSignal = null; load(); });
+  $("strat").addEventListener("change", () => { savePrefs(); render(); });
+  $("holding").addEventListener("change", () => { savePrefs(); render(); });
   $("refresh").addEventListener("click", load);
   // phones pause timers in the background, so fetch again when the app comes back to the front
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && Date.now() - state.fetchedAt > 60 * 1000) load();
   });
   window.addEventListener("pageshow", (e) => { if (e.persisted) load(); });
-  $("holding").addEventListener("change", () => { try { localStorage.setItem("swing-signal", JSON.stringify({ coin: $("coin").value, tf: $("tf").value, holding: $("holding").value })); } catch (e) {} render(); });
 
   const rerender = () => state.candles.length && render();
   try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender); } catch (e) {}
