@@ -113,10 +113,7 @@ td { font-family: var(--font-num); }
 .rules table td.pts { font-family: var(--font-num); text-align: right; white-space: nowrap; }
 .note { font-size: .8rem; color: var(--muted); max-width: 70ch; }
 .advice { margin: 0; font-size: 1rem; font-weight: 500; }
-.act.buy { border-color: var(--buy); color: var(--buy); }
-.act.sell { border-color: var(--sell); color: var(--sell); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-.paper-controls { margin-block: 12px; }
 .updated { font-size: .75rem; color: var(--muted); font-family: var(--font-num); }
 @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
 </style>
@@ -202,25 +199,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       </table>
     </div>
     <p class="note">現物のみの計算です。買いサインで手元資金の全額を買い、売却サインか損切りラインで保有分を全部売ります。空売り・先物・レバレッジは使いません。手数料は売買ごとに0.1%を差し引いています。</p>
-  </section>
-
-  <section class="panel">
-    <h2>デモトレード(仮想資金)</h2>
-    <div class="stats" id="paperStats"></div>
-    <div class="controls paper-controls">
-      <button id="pBuyAll" type="button" class="act buy">全額で買う</button>
-      <button id="pBuyHalf" type="button" class="act buy">半分で買う</button>
-      <button id="pSell" type="button" class="act sell">保有分を全部売る</button>
-      <button id="pReset" type="button">リセット</button>
-      <span id="pMsg" class="note" role="status"></span>
-    </div>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>日時</th><th>内容</th><th>価格</th><th>数量</th><th>金額</th></tr></thead>
-        <tbody id="paperLog"></tbody>
-      </table>
-    </div>
-    <p class="note">仮想資金 10,000 USDT から始めて、表示中の価格で現物を売買できます(手数料0.1%)。持っている数量より多くは売れず、資金より多くは買えません。記録はこのブラウザの中だけに保存されます。デモデータ表示中は売買できません。</p>
   </section>
 
   <section class="panel">
@@ -512,7 +490,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     $("trades").innerHTML = rows.join("") || `<tr><td colspan="7">この期間に売買サインは出ていません</td></tr>`;
 
     drawCharts(cs, ind, bt);
-    renderPaper();
 
     if (state.live && state.lastSignal && state.lastSignal !== txt) notify(`${$("coin").value}: ${state.lastSignal} → ${txt}`, `価格 ${fmtP(now)} / スコア ${s.total}`);
     state.lastSignal = txt;
@@ -536,63 +513,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     }
   } catch (e) {}
 
-  // ---------- demo trade (spot only, virtual money) ----------
-  const START_CASH = 10000;
-  let paper = { cash: START_CASH, pos: {}, log: [] };
-  try { const sp = JSON.parse(localStorage.getItem("swing-paper") || "null"); if (sp && typeof sp.cash === "number") paper = sp; } catch (e) {}
-  const savePaper = () => { try { localStorage.setItem("swing-paper", JSON.stringify(paper)); } catch (e) {} };
-  const lastPrice = () => state.forming ? state.forming.close : state.candles.length ? state.candles[state.candles.length - 1].close : null;
-  const fmtQ = (q) => q.toLocaleString("en-US", { maximumFractionDigits: 6 });
-  function paperTrade(kind, frac) {
-    const coin = $("coin").value, px = lastPrice();
-    if (!state.live || !px) { $("pMsg").textContent = "実データを読み込んでから売買できます。"; return; }
-    if (kind === "buy") {
-      const spend = paper.cash * frac;
-      if (spend < 1) { $("pMsg").textContent = "資金が足りません。"; return; }
-      const qty = spend * (1 - FEE) / px;
-      const cur = paper.pos[coin] || { qty: 0, cost: 0 };
-      paper.pos[coin] = { qty: cur.qty + qty, cost: cur.cost + spend };
-      paper.cash -= spend;
-      paper.log.unshift({ t: Date.now(), coin, side: "買い", px, qty, amt: spend });
-      $("pMsg").textContent = `${coin} を ${fmtQ(qty)} 買いました。`;
-    } else {
-      const cur = paper.pos[coin];
-      if (!cur || cur.qty <= 0) { $("pMsg").textContent = `${coin} を持っていないので売れません(現物のみ)。`; return; }
-      const got = cur.qty * px * (1 - FEE);
-      paper.cash += got;
-      paper.log.unshift({ t: Date.now(), coin, side: "売り", px, qty: cur.qty, amt: got, pl: got - cur.cost });
-      delete paper.pos[coin];
-      $("pMsg").textContent = `${coin} を全部売りました。損益 ${got - cur.cost >= 0 ? "+" : ""}${(got - cur.cost).toFixed(2)} USDT`;
-    }
-    paper.log = paper.log.slice(0, 50);
-    savePaper(); renderPaper();
-  }
-  function renderPaper() {
-    const coin = $("coin").value, px = lastPrice(), cur = paper.pos[coin];
-    let held = 0;
-    Object.entries(paper.pos).forEach(([c, p]) => { held += c === coin && px ? p.qty * px : p.cost; });
-    const total = paper.cash + held;
-    const closed = paper.log.filter((l) => l.pl != null), wins = closed.filter((l) => l.pl > 0).length;
-    const items = [
-      ["現金", paper.cash.toFixed(2) + " USDT"],
-      [`${coin} 保有`, cur ? fmtQ(cur.qty) : "なし"],
-      [`${coin} 含み損益`, cur && px ? fmtPct(cur.qty * px * (1 - FEE) / cur.cost - 1) : "—"],
-      ["評価額(合計)", total.toFixed(2) + " USDT"],
-      ["通算損益", fmtPct(total / START_CASH - 1)],
-      ["決済済み", closed.length ? `${closed.length} 回 / 勝率 ${Math.round(wins / closed.length * 100)}%` : "まだなし"],
-    ];
-    $("paperStats").innerHTML = "";
-    items.forEach(([k, v]) => { const d = document.createElement("div"); d.className = "stat"; d.innerHTML = "<span></span><b></b>"; d.children[0].textContent = k; d.children[1].textContent = v; $("paperStats").append(d); });
-    $("paperLog").innerHTML = paper.log.map((l) => `<tr><td>${new Date(l.t).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td><td>${l.coin} ${l.side}</td><td>${fmtP(l.px)}</td><td>${fmtQ(l.qty)}</td><td>${l.amt.toFixed(2)}${l.pl != null ? ` <span class="${l.pl >= 0 ? "up" : "down"}">(${l.pl >= 0 ? "+" : ""}${l.pl.toFixed(2)})</span>` : ""}</td></tr>`).join("") || `<tr><td colspan="5">まだ取引はありません</td></tr>`;
-    ["pBuyAll", "pBuyHalf", "pSell"].forEach((id) => $(id).disabled = !state.live);
-  }
-  $("pBuyAll").addEventListener("click", () => paperTrade("buy", 1));
-  $("pBuyHalf").addEventListener("click", () => paperTrade("buy", 0.5));
-  $("pSell").addEventListener("click", () => paperTrade("sell"));
-  $("pReset").addEventListener("click", () => {
-    if ($("pReset").dataset.armed) { paper = { cash: START_CASH, pos: {}, log: [] }; savePaper(); renderPaper(); $("pReset").textContent = "リセット"; delete $("pReset").dataset.armed; $("pMsg").textContent = "リセットしました。"; }
-    else { $("pReset").dataset.armed = "1"; $("pReset").textContent = "もう一度押すとリセット"; setTimeout(() => { $("pReset").textContent = "リセット"; delete $("pReset").dataset.armed; }, 4000); }
-  });
+  // the demo-trade feature was removed; clear what it left in this browser
+  try { localStorage.removeItem("swing-paper"); } catch (e) {}
 
   // ---------- evaluate all coins ----------
   $("evalBtn").addEventListener("click", async () => {
