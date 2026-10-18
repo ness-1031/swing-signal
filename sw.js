@@ -1,4 +1,4 @@
-const CACHE = "swing-signal-a91f4a8c";
+const CACHE = "swing-signal-375bbc9d";
 const SHELL = [
   "./",
   "./index.html",
@@ -31,7 +31,8 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   // app files: try the network first (to get updates), fall back to the cache when offline
   e.respondWith(
-    fetch(e.request)
+    // "no-cache" makes the browser check GitHub for a newer file instead of reusing its own copy for up to 10 minutes
+    fetch(e.request, url.origin === self.location.origin ? { cache: "no-cache" } : {})
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;

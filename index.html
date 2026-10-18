@@ -704,7 +704,13 @@ td small { color: var(--muted); font-size: .75em; }
 
 <script>
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
+  // when a new version takes over, reload once so it shows right away
+  let reloaded = false;
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
 }
 </script>
 </body>
